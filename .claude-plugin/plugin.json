@@ -1,0 +1,7 @@
+{
+  "name": "bmad-yolo",
+  "version": "1.0.0",
+  "description": "Autonomous BMAD Phase 4 implementation. Runs the full story cycle (create -> implement -> review -> fix -> done) in a loop until the epic is complete. Sleep while it codes.",
+  "author": "Ramon David",
+  "license": "MIT"
+}

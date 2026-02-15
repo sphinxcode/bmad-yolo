@@ -1,0 +1,17 @@
+{
+  "name": "bmad-yolo-marketplace",
+  "metadata": {
+    "description": "BMAD autonomous implementation plugins. Run entire sprints unattended with adversarial code review."
+  },
+  "owner": {
+    "name": "Ramon David"
+  },
+  "plugins": [
+    {
+      "name": "bmad-yolo",
+      "source": "./",
+      "description": "Autonomous BMAD Phase 4 implementation. Runs the full story cycle (create, implement, adversarial review, fix, commit) in a loop until the epic is complete. Sleep while it codes.",
+      "version": "1.0.0"
+    }
+  ]
+}
