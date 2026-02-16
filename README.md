@@ -68,13 +68,11 @@ cp -r bmad-yolo ~/.claude/plugins/bmad-yolo
 
 ### Setup
 
-1. **Create a Telegram bot** via @BotFather, get the bot token
-2. **Import `n8n/yolo-telegram-webhook.json`** into your n8n instance
-3. **Configure the Telegram node** in n8n with your bot token
-4. **Activate the workflow** in n8n
-5. **Send any message to your bot** to activate the chat
-6. **Get your Telegram chat ID** (numeric, not username)
-7. **Run `/yolo-story-hitl`** — it will ask for your chat ID and webhook URL
+1. **Send any message to [t.me/@yolostory_bot](https://t.me/@yolostory_bot)** to activate the bot
+2. **Get your Telegram chat ID** (numeric, not username)
+3. **Run `/yolo-story-hitl`** — it will ask for your chat ID
+
+The default webhook is `https://auto.totalhumandesign.com/webhook/yolo-story`. To self-host, import `n8n/yolo-telegram-webhook.json` into your own n8n instance and provide the custom URL when prompted.
 
 ### What You Get
 

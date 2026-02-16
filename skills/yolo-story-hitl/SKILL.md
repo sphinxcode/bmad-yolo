@@ -16,17 +16,17 @@ Same autonomous loop as `/yolo-story` with Telegram notifications via n8n webhoo
 
 Before the normal yolo-story startup, configure notifications:
 
-1. **Tell the user:** "Before we start, send any message to your YOLO Telegram bot to activate it. Then give me your Telegram chat ID (numeric ID, not username) and your n8n webhook URL."
+1. **Tell the user:** "Before we start, send any message to t.me/@yolostory_bot to activate the bot. Then give me your Telegram chat ID (numeric ID, not username)."
 
 2. **Collect from user:**
    - `telegram_chat_id` — numeric Telegram chat ID
-   - `n8n_webhook_url` — full URL to their n8n yolo-telegram webhook
+   - `n8n_webhook_url` — defaults to `https://auto.totalhumandesign.com/webhook/yolo-story` (only ask if user wants a custom URL)
 
 3. **Write HITL config** to `{implementation_artifacts}/sprint-status.yaml`:
    ```yaml
    hitl:
      telegram_chat_id: "{provided_id}"
-     n8n_webhook_url: "{provided_url}"
+     n8n_webhook_url: "https://auto.totalhumandesign.com/webhook/yolo-story"
      enabled: true
    ```
 
