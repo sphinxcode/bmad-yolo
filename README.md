@@ -1,158 +1,191 @@
-# bmad-yolo
+<p align="center">
+  <strong>bmad-yolo</strong><br>
+  <em>Autonomous sprint execution for BMAD projects</em>
+</p>
 
-Autonomous BMAD Phase 4 implementation for Claude Code.
+<p align="center">
+  <a href="#installation">Installation</a> &bull;
+  <a href="#quick-start">Quick Start</a> &bull;
+  <a href="#commands">Commands</a> &bull;
+  <a href="#telegram-notifications">Telegram</a> &bull;
+  <a href="#architecture">Architecture</a>
+</p>
 
-**Opus thinks. Sonnet executes. Haiku validates.**
+---
 
-## What It Does
+A [Claude Code](https://claude.ai/code) plugin that runs your entire BMAD Phase 4 (Implementation) autonomously. It creates stories, writes code with TDD, runs adversarial code reviews, fixes every finding, commits, and moves to the next story — until the epic is done.
 
-`/yolo-story` runs the full BMAD implementation cycle in a loop with tiered AI agents:
+Start it. Walk away. Come back to a completed epic on a clean branch.
 
-```
-Opus creates exhaustive stories -> Sonnet implements exactly as told ->
-Haiku validates build/tests -> Sonnet reviews adversarially ->
-Sonnet fixes issues (resumed session) -> Commit -> Next Story
-```
+## Installation
 
-It creates a git branch, implements every story in the epic, and pushes clean commits.
-You start it, go to sleep, wake up to a completed epic.
-
-`/yolo-story-hitl` does the same thing but sends detailed Telegram notifications after every step via n8n. Full implementation changelogs, not summaries.
-
-`/yolo-revert` safely discards the yolo branch and returns to main.
-
-## Agent Architecture
-
-| Agent | Model | Role |
-|-------|-------|------|
-| Orchestrator | Opus | Extended thinking. Routes, decides, recovers |
-| yolo-story-creator | Opus | Creates stories so exhaustive Sonnet can't drift |
-| yolo-developer | Sonnet | Junior dev. Follows story exactly. TDD. No decisions |
-| yolo-reviewer | Sonnet | Adversarial review. Fresh context every time |
-| yolo-validator | Haiku | Build pass? Tests pass? Pure verification |
-| yolo-health-checker | Haiku | Sprint-status vs git vs filesystem consistency |
-
-### Session Reuse
-
-The developer agent is **resumed** for fix cycles (saves ~50k tokens per round). The reviewer always gets **fresh context** (honest, unbiased review). Haiku agents are stateless.
-
-## Requirements
-
-- A BMAD project with `_bmad/` installed (via `npx bmad-method install`)
-- `epics.md` and `sprint-status.yaml` in your project
-- `architecture.md` and `prd.md` for project context
-- Git initialized with a remote
-- Phases 1-3 complete (Brief, PRD, Architecture, Epics)
-- Sprint planning complete (sprint-status.yaml populated)
-
-## Install
-
-Copy the `bmad-yolo/` directory into your Claude Code plugins location, or:
+Add the marketplace and install:
 
 ```bash
-# From your project root
-cp -r bmad-yolo ~/.claude/plugins/bmad-yolo
+/plugin marketplace add sphinxcode/bmad-yolo
+/plugin install bmad-yolo@sphinxcode-bmad-yolo
 ```
 
-## Usage
+Or via CLI outside a session:
 
-```
-/yolo-story       # Autonomous implementation (silent)
-/yolo-story-hitl  # Autonomous + Telegram notifications
-/yolo-revert      # Discard yolo branch, return to main
+```bash
+claude plugin install bmad-yolo@sphinxcode-bmad-yolo --scope user
 ```
 
-## HITL Telegram Notifications
+> **Scope options:** `user` (all projects), `project` (shared with collaborators), `local` (just you, this repo)
 
-`/yolo-story-hitl` sends detailed notifications to Telegram via an n8n webhook after every story step.
+### Prerequisites
 
-### Setup
+- [Claude Code](https://claude.ai/code) with plugin support
+- A BMAD project with `_bmad/` installed (`npx bmad-method install`)
+- Phases 1-3 complete: Brief, PRD, Architecture, Epics
+- Sprint planning done (`sprint-status.yaml` populated)
+- Git repo with a remote
 
-1. **Send any message to [t.me/@yolostory_bot](https://t.me/@yolostory_bot)** to activate the bot
-2. **Get your Telegram chat ID** (numeric, not username)
-3. **Run `/yolo-story-hitl`** — it will ask for your chat ID
+## Quick Start
 
-The default webhook is `https://auto.totalhumandesign.com/webhook/yolo-story`. To self-host, import `n8n/yolo-telegram-webhook.json` into your own n8n instance and provide the custom URL when prompted.
+```
+/yolo-story
+```
 
-### What You Get
+That's it. The plugin reads your sprint-status, creates a `yolo/{epic-name}` branch, and starts executing stories.
 
-Every step sends a full implementation changelog:
+## Commands
 
-- **Story Created** — all tasks, all acceptance criteria, branch info
-- **Story Implemented** — every file created/modified with descriptions, dependencies with versions, test counts
-- **Review Findings** — every finding with file:line, severity, description
-- **Fix Cycle** — every fix applied, files modified, new tests
-- **Story Done** — commit hash, final state, key decisions, human-check items
-- **Story Flagged** — unresolved issues, human decisions needed
-- **Epic Complete** — per-story summary, totals, merge instructions
-
-Notifications are fire-and-forget. They never pause execution. If n8n is down, yolo continues silently.
-
-### Privacy
-
-`sprint-status.yaml` contains your Telegram chat ID. The skill automatically ensures it's in `.gitignore` before any commits.
+| Command | Description |
+|---------|-------------|
+| `/yolo-story` | Run the full sprint autonomously (silent) |
+| `/yolo-story-hitl` | Same thing + Telegram notifications after every step |
+| `/yolo-revert` | Discard the yolo branch and return to main |
 
 ## How It Works
 
-1. Reads `_bmad/bmm/config.yaml` to find project artifacts
-2. Reads `sprint-status.yaml` to find the next story
-3. Creates `yolo/{epic-name}` git branch
-4. For each story:
-   - **Health Check (Haiku):** Validates branch, working tree, remote sync, sprint-status consistency
-   - **Create Story (Opus):** Follows `create-story` workflow. Exhaustive analysis, zero ambiguity
-   - **Implement (Sonnet):** Follows `dev-story` workflow. TDD, follows story exactly
-   - **Validate (Haiku):** Gate check — build and tests must pass before review
-   - **Review (Sonnet):** Independent adversarial review, min 10 findings
-   - **Fix (Sonnet, resumed):** Fixes all findings, re-validates, re-reviews (max 3 rounds)
-   - **Commit:** Atomic commit per story, push to remote
-5. Loops until epic is complete
+```
+for each story in sprint:
+
+  1. Health Check      →  verify branch, working tree, sprint-status consistency
+  2. Create Story      →  exhaustive story file with tasks, ACs, dev notes
+  3. Implement         →  TDD per task (red → green → refactor)
+  4. Validate          →  build passes, tests pass, tasks complete
+  5. Review            →  independent adversarial code review (10+ findings)
+  6. Fix               →  address all findings, re-validate, re-review
+  7. Commit & Push     →  atomic commit per story on yolo/{epic} branch
+
+  repeat until epic complete
+```
+
+Each story is one atomic commit. The branch is never merged automatically — that's your call after reviewing.
+
+## Architecture
+
+Six specialized agents with strict model separation:
+
+```
+OPUS (thinks)                    SONNET (executes)              HAIKU (validates)
+├── Orchestrator                 ├── Developer                  ├── Validator
+│   routes, decides, recovers   │   follows story exactly       │   build/test/lint gate
+│                                │   TDD, no decisions           │
+└── Story Creator                └── Reviewer                   └── Health Checker
+    exhaustive analysis              adversarial, fresh context      state consistency
+    zero ambiguity                   min 10 findings
+```
+
+| Agent | Model | Spawning | Purpose |
+|-------|-------|----------|---------|
+| Orchestrator | Opus | Main session | Extended thinking for routing, recovery, edge cases |
+| Story Creator | Opus | Per story | Creates stories so detailed Sonnet can't drift |
+| Developer | Sonnet | Per story, **resumed** for fixes | Follows story file exactly. TDD. No independent decisions |
+| Reviewer | Sonnet | Per review, **always fresh** | Adversarial review in separate context. Honest by design |
+| Validator | Haiku | Per validation | Build pass? Tests pass? File count matches? Zero creativity |
+| Health Checker | Haiku | Per story | Branch, working tree, remote sync, sprint-status vs files |
+
+**Token optimization:** The Developer agent is resumed for fix cycles (~50k token savings per round). The Reviewer always gets fresh context to prevent anchoring bias.
+
+## Telegram Notifications
+
+`/yolo-story-hitl` sends full implementation changelogs to Telegram after every step via n8n. Not summaries — complete changelogs with every file, every finding, every fix.
+
+### Setup
+
+1. Message [t.me/@yolostory_bot](https://t.me/@yolostory_bot) to activate the bot
+2. Get your numeric Telegram chat ID
+3. Run `/yolo-story-hitl`
+
+Default webhook: `https://auto.totalhumandesign.com/webhook/yolo-story`
+
+### Events
+
+| Event | What you receive |
+|-------|-----------------|
+| Story Created | Title, all tasks, all acceptance criteria, branch |
+| Implemented | Every file created/modified, dependencies, test counts |
+| Review Findings | Every finding with `file:line`, severity, description |
+| Fix Cycle | Every fix applied, files changed, new tests |
+| Story Done | Commit hash, final stats, key decisions, human-check items |
+| Story Flagged | Unresolved issues, what was tried, decisions needed |
+| Epic Complete | Per-story breakdown, totals, merge instructions |
+
+Notifications are fire-and-forget. They never block execution.
+
+### Self-Hosting
+
+Import `n8n/yolo-telegram-webhook.json` into your own n8n instance, configure the Telegram bot token, and provide your custom webhook URL when prompted.
+
+### Privacy
+
+`sprint-status.yaml` stores your Telegram chat ID. The plugin ensures it's in `.gitignore` before any commit.
 
 ## Safety
 
-- All work on a `yolo/{epic-name}` branch — main is never touched
-- Opus creates stories. Sonnet follows them. Separation prevents drift
-- Code review in separate subagent context for honest, unbiased review
-- Haiku validates build/tests as a gate before review
-- Each story is an atomic commit — easy to cherry-pick or revert
-- Max 3 fix-review rounds — stories get flagged, never loop infinitely
-- `/yolo-revert` nukes everything and returns to main
-- Destructive operations (DB drops, deployments) are logged but never executed
+| Guarantee | How |
+|-----------|-----|
+| Main branch untouched | All work on `yolo/{epic-name}` branch |
+| No AI drift | Opus writes stories, Sonnet follows them. Separation of concerns |
+| Honest code review | Reviewer runs in fresh context — never sees implementation reasoning |
+| No infinite loops | Max 3 fix-review rounds, then flag and move on |
+| Easy rollback | One atomic commit per story. `/yolo-revert` to discard everything |
+| No destructive ops | DB drops, deployments, CI triggers are logged but never executed |
 
-## What It Won't Do
+### What it will never do
 
-- Merge into main (that's your call after reviewing)
+- Merge into main
+- Force push or rebase
 - Execute destructive database operations
 - Deploy to any environment
-- Complete OAuth or interactive flows
-- Force push, rebase, or delete main
+- Run interactive flows (OAuth, browser prompts)
 
 ## Plugin Structure
 
 ```
 bmad-yolo/
 ├── .claude-plugin/
-│   ├── plugin.json
-│   └── marketplace.json
+│   ├── plugin.json                     # Plugin manifest (v1.1.0)
+│   └── marketplace.json                # Self-hosted marketplace config
 ├── skills/
 │   ├── yolo-story/
-│   │   ├── SKILL.md              # Autonomous loop (silent)
-│   │   ├── workflow-guide.md     # BMAD workflow paths and config resolution
-│   │   ├── state-machine.md      # Sprint status transitions, subagent tracking
-│   │   └── compact-anchor.md     # Recovery after context compaction
+│   │   ├── SKILL.md                    # Autonomous loop (silent)
+│   │   ├── workflow-guide.md           # BMAD workflow paths & config resolution
+│   │   ├── state-machine.md            # Status transitions & subagent tracking
+│   │   └── compact-anchor.md           # Recovery after context compaction
 │   ├── yolo-story-hitl/
-│   │   └── SKILL.md              # Same loop + Telegram notifications
+│   │   └── SKILL.md                    # Autonomous loop + Telegram notifications
 │   └── yolo-revert/
-│       └── SKILL.md              # Branch revert
+│       └── SKILL.md                    # Branch revert & cleanup
 ├── agents/
-│   ├── yolo-reviewer.md          # Adversarial code reviewer (Sonnet)
-│   ├── yolo-story-creator.md     # Story architect (Opus)
-│   ├── yolo-developer.md         # Junior developer (Sonnet)
-│   ├── yolo-validator.md         # QA validation bot (Haiku)
-│   └── yolo-health-checker.md    # State consistency checker (Haiku)
+│   ├── yolo-story-creator.md           # Story architect (Opus)
+│   ├── yolo-developer.md               # Implementation agent (Sonnet)
+│   ├── yolo-reviewer.md                # Adversarial code reviewer (Sonnet)
+│   ├── yolo-validator.md               # Build/test gate (Haiku)
+│   └── yolo-health-checker.md          # State consistency checker (Haiku)
 ├── n8n/
-│   └── yolo-telegram-webhook.json  # Importable n8n workflow
+│   └── yolo-telegram-webhook.json      # Importable n8n workflow
 └── README.md
 ```
+
+## Related
+
+- [BMAD-METHOD](https://github.com/bmad-method/BMAD-METHOD) — The framework this plugin automates
+- [Claude Code Plugins](https://docs.anthropic.com/en/docs/claude-code/plugins) — Plugin documentation
 
 ## License
 
