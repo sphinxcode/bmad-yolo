@@ -20,9 +20,7 @@
       "parameters": {
         "chatId": "={{ $json.body.telegram_chat_id }}",
         "text": "={{ $json.body.message }}",
-        "additionalFields": {
-          "parse_mode": "HTML"
-        }
+        "additionalFields": {}
       },
       "id": "telegram-send",
       "name": "Telegram Send Message",
