@@ -11,7 +11,7 @@ The actual `sprint-status.yaml` uses this structure:
 # tracking_system: file-system
 # story_location: "{implementation_artifacts}"
 
-execution_mode: yolo-story    # Added by yolo-story at startup
+execution_mode: yolo-story    # or yolo-story-hitl — added at startup
 
 development_status:
   epic-1: in-progress
@@ -35,6 +35,22 @@ development_status:
 - Comments at the top (`# ...`) MUST be preserved when writing
 - `execution_mode` is a top-level field added by yolo-story, not inside `development_status`
 
+## HITL Section (yolo-story-hitl only)
+
+When running `/yolo-story-hitl`, sprint-status.yaml includes:
+
+```yaml
+hitl:
+  telegram_chat_id: "123456789"
+  n8n_webhook_url: "https://your-n8n.instance/webhook/yolo-story"
+  enabled: true
+```
+
+- Added during HITL startup sequence (before normal startup)
+- `telegram_chat_id` is sensitive — sprint-status.yaml MUST be in `.gitignore`
+- If `enabled: false` or section is missing, notifications are silently skipped
+- The orchestrator reads this section at the start of each story to route notifications
+
 ## Story Status Transitions (STRICT)
 
 ```
@@ -45,11 +61,11 @@ Never skip states. Never go backwards except on revert.
 
 | Transition | Triggered By | Action |
 |---|---|---|
-| `backlog` -> `ready-for-dev` | create-story workflow | Story file created with full context |
-| `ready-for-dev` -> `in-progress` | dev-story workflow | Implementation started |
-| `in-progress` -> `review` | dev-story completion | All tasks done, tests pass |
-| `review` -> `done` | code-review clean pass | Review passed, story complete |
-| `review` -> `in-progress` | code-review with fixes | Issues found, needs more work |
+| `backlog` -> `ready-for-dev` | yolo-story-creator (Opus) | Story file created with full context |
+| `ready-for-dev` -> `in-progress` | yolo-developer (Sonnet) | Implementation started |
+| `in-progress` -> `review` | yolo-developer completion | All tasks done, tests pass |
+| `review` -> `done` | yolo-reviewer clean pass | Review passed, story complete |
+| `review` -> `in-progress` | yolo-reviewer with fixes | Issues found, needs more work |
 
 ## Epic Status Transitions
 
@@ -61,16 +77,42 @@ Never skip states. Never go backwards except on revert.
 ## YOLO-Specific Fields
 
 ```yaml
-execution_mode: yolo-story    # Top-level, added at startup, removed on revert
+execution_mode: yolo-story    # or yolo-story-hitl — added at startup, removed on revert
 ```
 
-Per-story tracking (optional, added by yolo-story for richer state):
+Per-story tracking (added by orchestrator for richer state):
 ```yaml
 # In the development_status section, stories may have additional yolo metadata
 # tracked via comments above each story key:
 # yolo-commit: abc1234
 # yolo-flagged: true
 ```
+
+## Atomic Operations
+
+When updating sprint-status.yaml, follow this protocol:
+
+1. **Read** the full YAML content
+2. **Modify** only the specific field being updated
+3. **Preserve** all comments, whitespace, and ordering
+4. **Write** the complete file back
+5. **Verify** by re-reading and checking the updated field
+
+Never do partial writes. Never truncate the file. If the write fails, re-read and retry once.
+
+## Subagent Tracking
+
+The orchestrator tracks subagent IDs for session reuse:
+
+| Agent | Tracking | Resume? |
+|---|---|---|
+| yolo-health-checker | Not tracked | No — stateless |
+| yolo-story-creator | Not tracked | No — story file captures everything |
+| yolo-developer | **agent_id saved** | **Yes** — resumed for fix cycles |
+| yolo-validator | Not tracked | No — stateless |
+| yolo-reviewer | Not tracked | No — fresh context intentional |
+
+The developer's `agent_id` is valid only within a single story cycle. It resets between stories. If context is compacted and the agent_id is lost, spawn a fresh developer.
 
 ## Stop Conditions
 
@@ -80,14 +122,14 @@ Per-story tracking (optional, added by yolo-story for richer state):
 
 ## Resume Logic
 
-If sprint-status.yaml has `execution_mode: yolo-story` and stories are not all done:
+If sprint-status.yaml has `execution_mode: yolo-story` (or `yolo-story-hitl`) and stories are not all done:
 
 | Current Status | Resume Action |
 |---|---|
-| `in-progress` | Resume dev-story implementation from first unchecked task |
-| `review` | Resume code review cycle |
-| `ready-for-dev` | Start dev-story implementation |
-| `backlog` | Start create-story |
+| `in-progress` | Spawn fresh yolo-developer from first unchecked task |
+| `review` | Spawn fresh yolo-reviewer |
+| `ready-for-dev` | Spawn yolo-developer |
+| `backlog` | Spawn yolo-story-creator |
 
 Finding the resume point:
 1. Scan `development_status` top to bottom

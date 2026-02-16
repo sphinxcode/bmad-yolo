@@ -13,6 +13,8 @@ disable-model-invocation: true
 
 Autonomous BMAD Phase 4 implementation. Execute the full story cycle in a loop until the epic is done.
 
+**Model tiering:** Opus thinks. Sonnet executes. Haiku validates.
+
 ## STARTUP SEQUENCE
 
 When `/yolo-story` is invoked:
@@ -33,115 +35,183 @@ When `/yolo-story` is invoked:
    - `{planning_artifacts}/prd.md`
    - `**/project-context.md` if it exists
 
-4. **Create a git branch:** `yolo/{epic-name-slugified}` off the current branch
+4. **Gitignore check:** Ensure `sprint-status.yaml` is in the project's `.gitignore`. If not, add it before any commits.
+
+5. **Create a git branch:** `yolo/{epic-name-slugified}` off the current branch
    - If branch already exists (resuming): `git checkout yolo/{epic-name}`
    - If new: `git checkout -b yolo/{epic-name}`
 
-5. **Add `execution_mode: yolo-story` to sprint-status.yaml** as a top-level field so any future session knows this sprint is in autonomous mode
+6. **Add `execution_mode: yolo-story` to sprint-status.yaml** as a top-level field so any future session knows this sprint is in autonomous mode
 
-6. **Begin the Per-Story Cycle**
+7. **Begin the Per-Story Cycle**
 
-## THE PER-STORY CYCLE
-
-For each story in the sprint:
-
-### Step 1: CREATE STORY
-
-Load and follow the actual Create Story workflow files:
-
-- Read `_bmad/bmm/workflows/4-implementation/create-story/workflow.yaml` for variable resolution
-- Read `_bmad/bmm/workflows/4-implementation/create-story/instructions.xml` and follow its steps
-- Use `_bmad/bmm/workflows/4-implementation/create-story/template.md` as the story template
-- Read `_bmad/bmm/workflows/4-implementation/create-story/checklist.md` for validation
-
-The workflow does:
-1. Find the first `backlog` story in sprint-status.yaml
-2. Load epics file to extract story requirements, acceptance criteria, and context
-3. Analyze architecture for technical guardrails
-4. Load previous story learnings if story_num > 1
-5. Generate the comprehensive story file with: story statement, acceptance criteria, tasks/subtasks, dev notes, project structure notes, references
-6. Update sprint-status.yaml: story status -> `ready-for-dev`
-
-**YOLO override:** Skip all user prompts and menu options. Auto-continue through every step. Skip web research (step 4 of create-story) unless architecture explicitly requires it.
-
-### Step 2: IMPLEMENT STORY (Dev Story)
-
-Load and follow the actual Dev Story workflow files:
-
-- Read `_bmad/bmm/workflows/4-implementation/dev-story/workflow.yaml` for variable resolution
-- Read `_bmad/bmm/workflows/4-implementation/dev-story/instructions.xml` and follow its steps
-- Read `_bmad/bmm/workflows/4-implementation/dev-story/checklist.md` for definition-of-done
-
-Update sprint-status.yaml: story status -> `in-progress`
-
-The workflow does:
-1. Find the `ready-for-dev` story and load it
-2. Parse tasks/subtasks from the story file
-3. For each task, follow red-green-refactor:
-   - RED: Write failing tests first
-   - GREEN: Implement minimal code to pass
-   - REFACTOR: Clean up while tests stay green
-4. Mark each task [x] when ALL validation gates pass
-5. Run full test suite after each task to catch regressions
-6. When all tasks done, update story Status -> `review`
-
-Update sprint-status.yaml: story status -> `review`
-
-**YOLO override:** Skip all user prompts. On HALT conditions (missing deps, config issues), attempt to resolve autonomously. Only truly HALT on 3 consecutive failures.
-
-### Step 3: CODE REVIEW VIA SUBAGENT (Mandatory)
-
-Spawn the `yolo-reviewer` subagent using the Task tool:
+## THE PER-STORY CYCLE (Subagent Dispatch)
 
 ```
-Task tool call:
-  subagent_type: general-purpose
-  prompt: [Load agents/yolo-reviewer.md content + story requirements + git diff + architecture context]
+ORCHESTRATOR (Opus, main session — extended thinking)
+│
+├─ 1. Read sprint-status.yaml → identify next story
+│
+├─ 2. Dispatch yolo-health-checker (Haiku)
+│     └─ Returns: HEALTHY or inconsistencies
+│     └─ Auto-fixes: branch checkout, git stash
+│
+├─ 3. Dispatch yolo-story-creator (Opus) ← CRITICAL STEP
+│     └─ Creates exhaustive story — zero ambiguity
+│     └─ Update sprint-status: backlog → ready-for-dev
+│
+├─ 4. Dispatch yolo-developer (Sonnet) ← JUNIOR DEV
+│     └─ SAVE agent_id for session reuse
+│     └─ Follows story exactly, TDD, no decisions
+│     └─ Update sprint-status: ready-for-dev → in-progress → review
+│
+├─ 5. Dispatch yolo-validator (Haiku) ← GATE
+│     └─ Build pass? Tests pass? Tasks complete?
+│     └─ If FAIL: resume yolo-developer → re-validate
+│
+├─ 6. Dispatch yolo-reviewer (Sonnet, FRESH context)
+│     └─ Adversarial review with min 10 findings target
+│     └─ Returns: BLOCKERS/HIGH/MEDIUM/LOW with file:line
+│
+├─ 7. If issues: RESUME yolo-developer (saved agent_id)
+│     └─ Fix ALL findings → re-validate → re-review
+│     └─ Max 3 rounds → FLAG if unresolved
+│
+├─ 8. Git commit + push (atomic, per story)
+│     └─ Update sprint-status: review → done
+│
+└─ 9. Next story (loop back to 1)
 ```
 
-The subagent runs in a **separate context** — it does NOT see implementation reasoning, only the code.
+### Step 1: HEALTH CHECK (Haiku)
 
-Pass to the subagent:
-- The story file (requirements, acceptance criteria, tasks)
-- `git diff yolo/{epic-name}` for all changes in this story's commit range
-- Architecture document for pattern compliance
-- `_bmad/core/tasks/review-adversarial-general.xml` content for adversarial review protocol
+Dispatch the health checker before each story:
 
-Receive back: findings categorized as BLOCKERS, HIGH, MEDIUM, LOW with file:line references.
+```
+Task tool:
+  subagent_type: bmad-yolo:yolo-health-checker
+  model: haiku
+  prompt: |
+    Check system health for yolo story execution.
+    Epic name: {epic_name}
+    Sprint status path: {implementation_artifacts}/sprint-status.yaml
+    Implementation artifacts: {implementation_artifacts}
+    [Include full yolo-health-checker.md instructions]
+```
 
-### Step 4: FIX ALL ISSUES (If Any Found)
+Parse the structured output. If `HEALTH_CHECK: CRITICAL`, stop and report. Otherwise continue.
 
-Fix everything returned by the reviewer. All severities: blockers, high, medium, AND low. No issue gets skipped.
+### Step 2: CREATE STORY (Opus)
 
-After fixes:
-- Re-run all tests
-- Re-run build
+This is the most important step. Opus creates stories so exhaustive that Sonnet can't drift.
 
-### Step 5: RE-REVIEW VIA SUBAGENT (Mandatory After Fixes)
+```
+Task tool:
+  subagent_type: bmad-yolo:yolo-story-creator
+  model: opus
+  prompt: |
+    Create the next story for the sprint.
+    Sprint status: {sprint-status.yaml content}
+    Config: {config.yaml content}
+    Planning artifacts path: {planning_artifacts}
+    Implementation artifacts path: {implementation_artifacts}
+    Previous story completion briefs: {if any}
+    [Include full yolo-story-creator.md instructions]
+```
 
-Spawn `yolo-reviewer` again with the updated diff.
+Parse `STORY_CREATED: {path}` from output. Update sprint-status: `backlog` -> `ready-for-dev`. If first story in epic, set epic to `in-progress`.
 
-- If new issues found -> back to Step 4
-- **Maximum 3 fix-review cycles.** If still failing after 3 rounds:
-  - Add a `## FLAGGED` section in the story file explaining what couldn't be resolved
-  - Set `flagged: true` in sprint-status.yaml for this story
-  - Commit the story as-is with: `feat(yolo): [story-key] - [title] [FLAGGED]`
-  - Continue to next story
-- If clean -> proceed to Step 6
+### Step 3: IMPLEMENT (Sonnet)
 
-### Step 6: COMMIT & MARK DONE
+Dispatch the junior developer:
+
+```
+Task tool:
+  subagent_type: bmad-yolo:yolo-developer
+  model: sonnet
+  prompt: |
+    Implement this story following BMAD dev-story workflow.
+    Story file: {story_file_path}
+    Story content: {story file content}
+    Sprint status path: {implementation_artifacts}/sprint-status.yaml
+    [Include full yolo-developer.md instructions]
+```
+
+**SAVE the returned agent_id** — this session will be resumed for fix cycles (saves ~50k tokens per fix round).
+
+Parse `IMPLEMENTATION_COMPLETE` output for files created/modified, tests written, dependencies added.
+
+### Step 4: VALIDATE (Haiku Gate)
+
+Dispatch the validator before sending to review:
+
+```
+Task tool:
+  subagent_type: bmad-yolo:yolo-validator
+  model: haiku
+  prompt: |
+    Validate the implementation for story {story_key}.
+    Story file: {story_file_path}
+    [Include full yolo-validator.md instructions]
+```
+
+Parse `VALIDATION_RESULT: PASS|FAIL`.
+
+If **FAIL**: Resume the developer (saved agent_id) to fix test/build failures, then re-validate. Do NOT proceed to review until validator passes.
+
+### Step 5: REVIEW (Sonnet, Fresh Context)
+
+Dispatch the reviewer — always fresh context (never resume):
+
+```
+Task tool:
+  subagent_type: bmad-yolo:yolo-reviewer
+  model: sonnet
+  prompt: |
+    [Load agents/yolo-reviewer.md content]
+    Story file content: {story}
+    Git diff: {git diff for this story}
+    Architecture: {architecture.md content}
+    Adversarial protocol: {review-adversarial-general.xml content}
+```
+
+Parse findings by severity from the structured output.
+
+### Step 6: FIX CYCLE (Resume Sonnet)
+
+If review found issues, **resume** the developer session:
+
+```
+Task tool:
+  subagent_type: bmad-yolo:yolo-developer
+  model: sonnet
+  resume: {saved_agent_id}
+  prompt: |
+    Review findings to fix (ALL severities):
+    {formatted findings with file:line}
+    Fix every finding. Re-run tests after each fix.
+```
+
+After fixes: re-validate (Step 4) -> re-review (Step 5).
+
+**Maximum 3 rounds.** Track finding counts:
+- If findings DECREASE: progressing, continue
+- If findings INCREASE: regression, FLAG immediately
+- If 3 rounds exhausted: FLAG
+
+### Step 7: COMMIT & DONE
 
 ```bash
 git add -A
-git commit -m "feat(yolo): [story-key] - [story title summary]
+git commit -m "feat(yolo): {story-key} - {title}
 
 Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>"
 git push origin yolo/{epic-name}
 ```
 
-Update sprint-status.yaml: story status -> `done`
+Update sprint-status: `review` -> `done`.
 
-Write a **Story Completion Brief** (max 15 lines) at the end of the story file:
+Write a **Story Completion Brief** at the end of the story file:
 - What was built
 - Key files changed
 - Key decisions made
@@ -149,14 +219,21 @@ Write a **Story Completion Brief** (max 15 lines) at the end of the story file:
 
 **-> NEXT STORY (back to Step 1)**
 
+## FLAGGING A STORY
+
+If 3 fix-review rounds exhausted or findings INCREASE:
+1. Add `## FLAGGED` section in story file explaining unresolved issues
+2. Set `flagged: true` comment above story key in sprint-status.yaml
+3. Commit with: `feat(yolo): {story-key} - {title} [FLAGGED]`
+4. Continue to next story
+
 ## CONTEXT MANAGEMENT
 
-**Within a Story:** Full continuity. Keep all context from create -> implement -> review -> fix -> done.
+**Within a Story:** Full continuity. Developer agent_id preserved for resume.
 
 **Between Stories:** Soft reset after marking done:
-- The Story Completion Brief is the carry-forward artifact
-- For the NEXT story, rely on: completion briefs from previous stories, original project docs (epics, architecture, PRD), and the actual codebase
-- Do NOT carry forward implementation details, review findings, or fix reasoning from previous stories
+- Carry forward: completion briefs from previous stories, original project docs, the codebase
+- Discard: implementation details, review findings, fix reasoning from previous stories
 
 ## COMPACT RECOVERY (CRITICAL)
 
@@ -167,6 +244,8 @@ If context has been compacted or you're unsure of your current state:
 4. Check which stories are `done`, which is `in-progress`, which is next
 5. Read completion briefs from done stories for context
 6. Resume the cycle from the current story's current step
+7. If a developer agent_id was saved before compaction, it's lost — spawn fresh
+
 Never guess your position. Always verify from sprint-status.yaml.
 
 ## GIT OPERATIONS
@@ -175,6 +254,7 @@ This skill DOES perform:
 - **Creates branch:** `yolo/{epic-name}` at startup
 - **Commits:** After each story completion (one atomic commit per story)
 - **Pushes:** After each commit to the remote
+- **Gitignore:** Ensures sprint-status.yaml is in .gitignore
 
 This skill does NOT:
 - Merge into main
@@ -214,13 +294,12 @@ The loop stops when:
 After stopping, print:
 
 ```
-═══ YOLO COMPLETE ═══
+YOLO COMPLETE
 Epic: {name}
 Stories completed: X/Y
-Branch: yolo/{epic-name}
 Flagged stories: {list any flagged}
+Branch: yolo/{epic-name}
 Ready for: git checkout main && git merge yolo/{epic-name}
-═══════════════════════
 ```
 
 ## TONE
